@@ -1,0 +1,4 @@
+node_modules/
+.forge/
+scripts/personas.json
+scripts/seed-output.json

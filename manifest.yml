@@ -1,0 +1,229 @@
+modules:
+  jira:globalPage:
+    - key: handover-page
+      resource: main
+      resolver:
+        function: resolver
+      render: native
+      title: Handover
+  jira:issueContext:
+    - key: knowledge-panel
+      resource: panel
+      resolver:
+        function: resolver
+      render: native
+      title: Knowledge risk
+      label: Knowledge risk
+  rovo:agent:
+    - key: handover-agent
+      name: Handover
+      description: Finds knowledge silos (bus factor) across Jira, Confluence and Teamwork Graph and builds instant handover kits when someone is out.
+      prompt: resource:agent-resource;prompts/handover-agent.txt
+      conversationStarters:
+        - Which areas are a single point of failure?
+        - Build a handover kit for Maya Chen next week
+        - Who is the backup for settlement while Maya is out?
+      actions:
+        - get-silo-report
+        - get-person-footprint
+        - get-handover-kit
+        - publish-handover-kit
+        - get-backup-for-area
+        - set-absence
+  rovo:mcp:
+    - key: handover-mcp
+      name: Handover MCP
+      tools:
+        - get-silo-report
+        - get-person-footprint
+        - get-handover-kit
+        - publish-handover-kit
+        - get-backup-for-area
+        - set-absence
+  action:
+    - key: get-silo-report
+      name: Get silo report
+      function: get-silo-report-fn
+      actionVerb: GET
+      description: Returns the knowledge-silo report for the team, riskiest areas first, with bus factor, who owns each area, and the most exposed people. Optionally filtered to one area.
+      inputs:
+        area:
+          title: Area
+          type: string
+          required: false
+          description: Optional area name (Jira component) to filter, for example payments-core.
+    - key: get-person-footprint
+      name: Get person footprint
+      function: get-person-footprint-fn
+      actionVerb: GET
+      description: Returns the areas a person owns or contributes to, their exposure score and number of open assigned issues.
+      inputs:
+        person:
+          title: Person
+          type: string
+          required: true
+          description: Display name of the person, for example Maya Chen.
+    - key: get-handover-kit
+      name: Get handover kit
+      function: get-handover-kit-fn
+      actionVerb: GET
+      description: Builds a handover kit preview for a person for an absence window - in-flight issues with next steps, decisions found in comments, who to ask instead, and open risks. Does not publish anything.
+      inputs:
+        person:
+          title: Person
+          type: string
+          required: true
+          description: Display name of the person who will be away.
+        from:
+          title: From date
+          type: string
+          required: false
+          description: First day of the absence as an ISO date (YYYY-MM-DD). Defaults to today.
+        to:
+          title: To date
+          type: string
+          required: false
+          description: Last day of the absence as an ISO date (YYYY-MM-DD). Defaults to seven days after the start.
+        reason:
+          title: Reason
+          type: string
+          required: false
+          description: Short reason such as vacation or sick leave.
+    - key: publish-handover-kit
+      name: Publish handover kit
+      function: publish-handover-kit-fn
+      actionVerb: CREATE
+      description: Publishes the handover kit as a Confluence page and creates Jira follow-up tasks assigned to the suggested backups. Only call this after the user has confirmed.
+      inputs:
+        person:
+          title: Person
+          type: string
+          required: true
+          description: Display name of the person who will be away.
+        from:
+          title: From date
+          type: string
+          required: false
+          description: First day of the absence (YYYY-MM-DD).
+        to:
+          title: To date
+          type: string
+          required: false
+          description: Last day of the absence (YYYY-MM-DD).
+        reason:
+          title: Reason
+          type: string
+          required: false
+          description: Short reason such as vacation or sick leave.
+        createTasks:
+          title: Create follow-up tasks
+          type: boolean
+          required: false
+          description: Whether to create Jira follow-up tasks. Defaults to true.
+    - key: get-backup-for-area
+      name: Get backup for area
+      function: get-backup-for-area-fn
+      actionVerb: GET
+      description: Returns who can cover an area, taking recorded absences into account, and the best available backup.
+      inputs:
+        area:
+          title: Area
+          type: string
+          required: true
+          description: Area name (Jira component), for example settlement.
+        from:
+          title: From date
+          type: string
+          required: false
+          description: Start of the period to cover (YYYY-MM-DD). Defaults to today.
+        to:
+          title: To date
+          type: string
+          required: false
+          description: End of the period to cover (YYYY-MM-DD).
+    - key: set-absence
+      name: Record absence
+      function: set-absence-fn
+      actionVerb: UPDATE
+      description: Records that a person will be away so the radar and backup suggestions take it into account.
+      inputs:
+        person:
+          title: Person
+          type: string
+          required: true
+          description: Display name of the person.
+        from:
+          title: From date
+          type: string
+          required: true
+          description: First day away (YYYY-MM-DD).
+        to:
+          title: To date
+          type: string
+          required: true
+          description: Last day away (YYYY-MM-DD).
+        reason:
+          title: Reason
+          type: string
+          required: false
+          description: Short reason.
+  scheduledTrigger:
+    - key: weekly-silo-report
+      function: weekly-job
+      interval: week
+  consumer:
+    - key: analysis-consumer
+      queue: analysis-queue
+      function: analysis-consumer-fn
+  function:
+    - key: resolver
+      handler: index.handler
+    - key: get-silo-report-fn
+      handler: index.getSiloReport
+    - key: get-person-footprint-fn
+      handler: index.getPersonFootprint
+    - key: get-handover-kit-fn
+      handler: index.getHandoverKit
+    - key: publish-handover-kit-fn
+      handler: index.publishHandoverKit
+    - key: get-backup-for-area-fn
+      handler: index.getBackupForArea
+    - key: set-absence-fn
+      handler: index.setAbsence
+    - key: weekly-job
+      handler: index.weeklyJob
+      timeoutSeconds: 300
+    - key: analysis-consumer-fn
+      handler: index.analysisConsumer
+      timeoutSeconds: 300
+resources:
+  - key: main
+    path: src/frontend/index.jsx
+  - key: panel
+    path: src/frontend/panel.jsx
+  - key: agent-resource
+    path: resource/agent
+app:
+  compatibility:
+    jira:
+      required: true
+    confluence:
+      required: false
+  runtime:
+    name: nodejs24.x
+    memoryMB: 512
+    architecture: arm64
+  id: ari:cloud:ecosystem::app/49d6f0ed-4a17-4a94-b038-e988d51391ce
+permissions:
+  scopes:
+    - storage:app
+    - read:jira-work
+    - write:jira-work
+    - read:jira-user
+    - read:page:confluence
+    - read:label:confluence
+    - write:page:confluence
+    - read:space:confluence
+    - read:graph:issue:jira
+    - read:graph:user:atlassian
+    - read:graph:page:confluence
